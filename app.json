@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "farmsync-app",
+    "slug": "farmsync-app",
+    "version": "1.0.0",
+    "jsEngine": "jsc",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
+  }
+}

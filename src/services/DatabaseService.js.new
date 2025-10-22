@@ -1,0 +1,306 @@
+import * as SQLite from 'expo-sqlite';
+
+// Open or create the database
+const openDatabase = () => {
+  try {
+    const db = SQLite.openDatabase('farmsync.db');
+    console.log('Database opened successfully');
+    return db;
+  } catch (error) {
+    console.error('Error opening database:', error);
+    throw error;
+  }
+};
+
+export class DatabaseService {
+  static dbInstance = null;
+
+  // Get database instance (Singleton)
+  static async getDB() {
+    if (!this.dbInstance) {
+      this.dbInstance = openDatabase();
+      await this.initDatabase();
+    }
+    return this.dbInstance;
+  }
+
+  // Initialize database and create tables
+  static async initDatabase() {
+    const db = await this.getDB();
+    
+    return new Promise((resolve, reject) => {
+      db.transaction(
+        async (tx) => {
+          try {
+            // Create Animals table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Animales (
+                id_animal INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT,
+                id_siniiga TEXT,
+                id_interno TEXT UNIQUE,
+                raza TEXT,
+                fecha_nacimiento TEXT,
+                sexo TEXT CHECK(sexo IN ('Hembra', 'Macho')),
+                estado_fisiologico TEXT,
+                estatus TEXT CHECK(estatus IN ('Activa', 'Vendida', 'Muerta', 'Secada', 'Enferma')),
+                sync_status TEXT DEFAULT 'pending',
+                local_id TEXT
+              )`
+            );
+
+            // Create Servicios table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Servicios (
+                id_servicio INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_animal INTEGER,
+                fecha_servicio TEXT,
+                tipo_servicio TEXT,
+                toro TEXT,
+                notas TEXT,
+                sync_status TEXT DEFAULT 'pending',
+                FOREIGN KEY (id_animal) REFERENCES Animales(id_animal)
+              )`
+            );
+
+            // Create Diagnosticos table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Diagnosticos (
+                id_diagnostico INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_animal INTEGER,
+                fecha_diagnostico TEXT,
+                resultado TEXT,
+                dias_post_servicio INTEGER,
+                notas TEXT,
+                sync_status TEXT DEFAULT 'pending',
+                FOREIGN KEY (id_animal) REFERENCES Animales(id_animal)
+              )`
+            );
+
+            // Create Partos table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Partos (
+                id_parto INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_animal INTEGER,
+                fecha_parto TEXT,
+                no_parto INTEGER,
+                problemas TEXT,
+                dias_abiertos INTEGER,
+                sync_status TEXT DEFAULT 'pending',
+                FOREIGN KEY (id_animal) REFERENCES Animales(id_animal)
+              )`
+            );
+
+            // Create Ordenas table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Ordenas (
+                id_ordena INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_animal INTEGER,
+                fecha_ordena TEXT,
+                litros_am REAL,
+                litros_pm REAL,
+                total_litros REAL,
+                dias_en_leche INTEGER,
+                sync_status TEXT DEFAULT 'pending',
+                FOREIGN KEY (id_animal) REFERENCES Animales(id_animal)
+              )`
+            );
+
+            // Create Tratamientos table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Tratamientos (
+                id_tratamiento INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_animal INTEGER,
+                fecha_inicio TEXT,
+                fecha_fin TEXT,
+                descripcion TEXT,
+                medicamento TEXT,
+                dosis TEXT,
+                frecuencia TEXT,
+                notas TEXT,
+                sync_status TEXT DEFAULT 'pending',
+                FOREIGN KEY (id_animal) REFERENCES Animales(id_animal)
+              )`
+            );
+
+            // Create Secados table
+            await this.executeSqlTx(tx, `
+              CREATE TABLE IF NOT EXISTS Secados (
+                id_secado INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_animal INTEGER,
+                fecha_planeada TEXT,
+                fecha_real TEXT,
+                motivo TEXT,
+                notas TEXT,
+                sync_status TEXT DEFAULT 'pending',
+                FOREIGN KEY (id_animal) REFERENCES Animales(id_animal)
+              )`
+            );
+            
+            resolve(true);
+          } catch (error) {
+            console.error('Error initializing database:', error);
+            reject(error);
+          }
+        },
+        (error) => {
+          console.error('Transaction error during initialization:', error);
+          reject(error);
+        },
+        () => {
+          console.log('Database initialization completed');
+        }
+      );
+    });
+  }
+
+  // Execute SQL with transaction
+  static executeSqlTx(tx, sql, params = []) {
+    return new Promise((resolve, reject) => {
+      tx.executeSql(
+        sql,
+        params,
+        (_, result) => resolve(result),
+        (_, error) => {
+          console.error('SQL Error:', error);
+          reject(error);
+          return false;
+        }
+      );
+    });
+  }
+
+  // Execute SQL with automatic transaction handling
+  static async executeSql(sql, params = []) {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      db.transaction(
+        (tx) => {
+          tx.executeSql(
+            sql,
+            params,
+            (_, result) => resolve([result]),
+            (_, error) => {
+              console.error('SQL Error:', error);
+              reject(error);
+              return false;
+            }
+          );
+        },
+        (error) => {
+          console.error('Transaction Error:', error);
+          reject(error);
+        },
+        () => console.log('Transaction completed')
+      );
+    });
+  }
+}
+
+// Animal Service
+export class AnimalService {
+  static async getAnimales() {
+    try {
+      const [results] = await DatabaseService.executeSql('SELECT * FROM Animales');
+      return results.rows._array;
+    } catch (error) {
+      console.error('Error getting animales:', error);
+      throw error;
+    }
+  }
+
+  static async insertAnimal(animal) {
+    const { nombre, id_siniiga, id_interno, raza, fecha_nacimiento, sexo, estado_fisiologico, estatus } = animal;
+    
+    // Validate required fields
+    if (!id_interno || id_interno.trim() === '') {
+      throw new Error('El ID interno es obligatorio');
+    }
+    
+    // Validate sexo
+    if (sexo && !['Hembra', 'Macho'].includes(sexo)) {
+      throw new Error('El sexo debe ser "Hembra" o "Macho"');
+    }
+    
+    // Validate estatus
+    const validStatuses = ['Activa', 'Vendida', 'Muerta', 'Secada', 'Enferma'];
+    if (estatus && !validStatuses.includes(estatus)) {
+      throw new Error(`Estatus no válido. Debe ser uno de: ${validStatuses.join(', ')}`);
+    }
+    
+    // Format date if needed
+    let formattedDate = fecha_nacimiento;
+    if (fecha_nacimiento && fecha_nacimiento.includes('/')) {
+      const [day, month, year] = fecha_nacimiento.split('/');
+      formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    try {
+      const [result] = await DatabaseService.executeSql(
+        `INSERT INTO Animales 
+         (nombre, id_siniiga, id_interno, raza, fecha_nacimiento, sexo, estado_fisiologico, estatus, sync_status) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          nombre || null,
+          id_siniiga || null,
+          id_interno,
+          raza || null,
+          formattedDate || null,
+          sexo || 'Hembra', 
+          estado_fisiologico || null,
+          estatus || 'Activa',
+          'pending'
+        ]
+      );
+      
+      return result.insertId;
+    } catch (error) {
+      console.error('Error inserting animal:', error);
+      if (error.message.includes('UNIQUE constraint failed')) {
+        throw new Error('Ya existe un animal con este ID interno');
+      }
+      throw error;
+    }
+  }
+  
+  // Add other CRUD methods as needed
+}
+
+// Initialize other service classes (ServicioService, DiagnosticoService, etc.)
+export class ServicioService {
+  static async getServicios() {
+    try {
+      const [results] = await DatabaseService.executeSql('SELECT * FROM Servicios');
+      return results.rows._array;
+    } catch (error) {
+      console.error('Error getting servicios:', error);
+      throw error;
+    }
+  }
+  
+  // Add other CRUD methods as needed
+}
+
+export class DiagnosticoService {
+  static async getDiagnosticos() {
+    try {
+      const [results] = await DatabaseService.executeSql('SELECT * FROM Diagnosticos');
+      return results.rows._array;
+    } catch (error) {
+      console.error('Error getting diagnosticos:', error);
+      throw error;
+    }
+  }
+  
+  // Add other CRUD methods as needed
+}
+
+// Export other service classes
+export { 
+  AnimalService, 
+  ServicioService, 
+  DiagnosticoService 
+  // Export other services as needed
+};
+
+export default DatabaseService;
