@@ -1,35 +1,58 @@
 import React, { useState, useContext } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Image, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSync } from '../context/SyncContext';
+import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../services/AuthService';
 import { COLORS } from '../constants/colors';
-
-// Mock user data
-const userData = {
-  name: 'Juan Pérez',
-  email: 'juan.perez@rancho.com',
-  farm: 'Rancho Los Pinos',
-  location: 'Zacatecas, México',
-  animalsCount: 125,
-  lastSync: '2023-06-01T14:30:00',
-};
 
 export default function ProfileScreen({ navigation }) {
   const { isConnected, syncData, getSyncStatus } = useSync();
+  const { user, logout } = useAuth();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [syncInProgress, setSyncInProgress] = useState(false);
-  
+
   const syncStatus = getSyncStatus();
 
   const handleSync = async () => {
     if (syncInProgress) return;
-    
+
     setSyncInProgress(true);
     try {
       await syncData();
     } finally {
       setSyncInProgress(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      '¿Estás seguro que deseas salir?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Salir',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+          },
+        },
+      ]
+    );
+  };
+
+  const getRoleLabel = (role) => {
+    switch (role) {
+      case ROLES.ADMIN:
+        return 'Administrador';
+      case ROLES.MANAGER:
+        return 'Gerente';
+      case ROLES.USER:
+        return 'Usuario';
+      default:
+        return role;
     }
   };
 
@@ -70,12 +93,12 @@ export default function ProfileScreen({ navigation }) {
       title: 'Ayuda y Soporte',
       onPress: () => navigation.navigate('Help') 
     },
-    { 
-      id: 'logout', 
-      icon: 'log-out', 
+    {
+      id: 'logout',
+      icon: 'log-out',
       title: 'Cerrar Sesión',
       titleColor: COLORS.danger,
-      onPress: () => console.log('Logout') 
+      onPress: handleLogout
     },
   ];
 
@@ -84,22 +107,15 @@ export default function ProfileScreen({ navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-          <Image 
-            source={{ uri: 'https://randomuser.me/api/portraits/men/1.jpg' }} 
-            style={styles.avatar}
-          />
-          <View style={styles.onlineIndicator} />
-        </View>
-        <Text style={styles.userName}>{userData.name}</Text>
-        <Text style={styles.userEmail}>{userData.email}</Text>
-        
-        <View style={styles.farmInfo}>
-          <Ionicons name="business" size={16} color={COLORS.textSecondary} />
-          <Text style={styles.farmName}>{userData.farm}</Text>
-          <View style={styles.locationContainer}>
-            <Ionicons name="location" size={12} color={COLORS.textSecondary} />
-            <Text style={styles.locationText}>{userData.location}</Text>
+          <View style={styles.avatarPlaceholder}>
+            <Ionicons name="person" size={50} color={COLORS.primary} />
           </View>
+        </View>
+        <Text style={styles.userName}>{user?.full_name || 'Usuario'}</Text>
+        <Text style={styles.userEmail}>{user?.email || `@${user?.username}`}</Text>
+
+        <View style={styles.roleBadge}>
+          <Text style={styles.roleText}>{getRoleLabel(user?.role)}</Text>
         </View>
       </View>
 
@@ -114,16 +130,14 @@ export default function ProfileScreen({ navigation }) {
           </View>
           
           <View style={styles.syncInfo}>
-            <View style={styles.infoRow}>
-              <Ionicons name="paw" size={16} color={COLORS.textSecondary} />
-              <Text style={styles.infoText}>{userData.animalsCount} animales registrados</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Ionicons name="time" size={16} color={COLORS.textSecondary} />
-              <Text style={styles.infoText}>
-                Última sincronización: {new Date(userData.lastSync).toLocaleString()}
-              </Text>
-            </View>
+            {user?.last_login && (
+              <View style={styles.infoRow}>
+                <Ionicons name="time" size={16} color={COLORS.textSecondary} />
+                <Text style={styles.infoText}>
+                  Último acceso: {new Date(user.last_login).toLocaleString('es-MX')}
+                </Text>
+              </View>
+            )}
           </View>
           
           <TouchableOpacity 
@@ -235,23 +249,15 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 16,
   },
-  avatar: {
+  avatarPlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
     borderWidth: 3,
     borderColor: COLORS.primary,
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.success,
-    borderWidth: 2,
-    borderColor: 'white',
+    backgroundColor: '#f0f9ff',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   userName: {
     fontSize: 22,
@@ -264,25 +270,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: 12,
   },
-  farmInfo: {
-    alignItems: 'center',
+  roleBadge: {
     marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: COLORS.primary,
+    borderRadius: 16,
   },
-  farmName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.text,
-    marginVertical: 4,
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  locationText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginLeft: 4,
+  roleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
   card: {
     backgroundColor: 'white',

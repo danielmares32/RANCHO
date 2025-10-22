@@ -29,6 +29,13 @@ import DatabaseTestScreen from './src/screens/DatabaseTestScreen';
 // Import context providers
 import { SyncProvider } from './src/context/SyncContext';
 import { DatabaseProvider } from './src/context/DatabaseContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+
+// Import authentication screens
+import Login from './src/screens/Login';
+
+// Import permissions
+import { PERMISSIONS } from './src/services/AuthService';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -146,80 +153,123 @@ const getTabBarIcon = (route, focused, color, size) => {
   return <Ionicons name={iconName} size={size} color={color} />;
 };
 
-// Main App component
+// AppNavigator - Handles authentication routing
+const AppNavigator = () => {
+  const { isAuthenticated, isLoading, hasPermission } = useAuth();
+
+  if (isLoading) {
+    // Loading screen while checking auth state
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+          <Ionicons name="paw" size={60} color="#2ecc71" />
+          <StatusBar barStyle="dark-content" />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
+  }
+
+  if (!isAuthenticated) {
+    // Show login screen if not authenticated
+    return (
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <NavigationContainer>
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Login" component={Login} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    );
+  }
+
+  // Authenticated - Show main app with conditional tabs based on permissions
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused, color, size }) =>
+              getTabBarIcon(route, focused, color, size),
+            tabBarActiveTintColor: '#2ecc71',
+            tabBarInactiveTintColor: '#95a5a6',
+            tabBarStyle: {
+              height: Platform.OS === 'ios' ? 90 : 70,
+              paddingBottom: Platform.OS === 'ios' ? 30 : 10,
+              paddingTop: 10,
+              backgroundColor: '#fff',
+              borderTopWidth: 1,
+              borderTopColor: '#f1f2f6',
+              elevation: 5,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -5 },
+              shadowOpacity: 0.1,
+              shadowRadius: 5,
+            },
+            tabBarLabelStyle: {
+              fontSize: 12,
+              marginBottom: 5,
+            },
+            headerShown: false,
+          })}
+        >
+          <Tab.Screen
+            name="Inicio"
+            component={HomeScreen}
+            options={{ tabBarLabel: 'Inicio' }}
+          />
+          <Tab.Screen
+            name="Hato"
+            component={HerdStackNavigator}
+            options={{ tabBarLabel: 'Hato' }}
+          />
+          <Tab.Screen
+            name="Calendario"
+            component={CalendarStackNavigator}
+            options={{ tabBarLabel: 'Calendario' }}
+          />
+          <Tab.Screen
+            name="KPIs"
+            component={StatsScreen}
+            options={{ tabBarLabel: 'KPIs' }}
+          />
+
+          {/* Only show Users tab if user has permission */}
+          {hasPermission(PERMISSIONS.USERS_READ) && (
+            <Tab.Screen
+              name="Usuarios"
+              component={require('./src/screens/Users').default}
+              options={{ tabBarLabel: 'Usuarios' }}
+            />
+          )}
+
+          <Tab.Screen
+            name="Ubicaciones"
+            component={LocationsScreen}
+            options={{ tabBarLabel: 'Ubicaciones' }}
+          />
+          <Tab.Screen
+            name="Perfil"
+            component={ProfileStackNavigator}
+            options={{ tabBarLabel: 'Perfil' }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+};
+
+// Main App component with providers
 const App = () => {
   return (
-    <DatabaseProvider>
-      <SyncProvider>
-        <SafeAreaProvider>
-          <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-          <NavigationContainer>
-            <Tab.Navigator
-              screenOptions={({ route }) => ({
-                tabBarIcon: ({ focused, color, size }) => 
-                  getTabBarIcon(route, focused, color, size),
-                tabBarActiveTintColor: '#2ecc71',
-                tabBarInactiveTintColor: '#95a5a6',
-                tabBarStyle: {
-                  height: Platform.OS === 'ios' ? 90 : 70,
-                  paddingBottom: Platform.OS === 'ios' ? 30 : 10,
-                  paddingTop: 10,
-                  backgroundColor: '#fff',
-                  borderTopWidth: 1,
-                  borderTopColor: '#f1f2f6',
-                  elevation: 5,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: -5 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 5,
-                },
-                tabBarLabelStyle: {
-                  fontSize: 12,
-                  marginBottom: 5,
-                },
-                headerShown: false,
-              })}
-            >
-              <Tab.Screen 
-                name="Inicio" 
-                component={HomeScreen} 
-                options={{ tabBarLabel: 'Inicio' }}
-              />
-              <Tab.Screen 
-                name="Hato" 
-                component={HerdStackNavigator} 
-                options={{ tabBarLabel: 'Hato' }}
-              />
-              <Tab.Screen 
-                name="Calendario" 
-                component={CalendarStackNavigator} 
-                options={{ tabBarLabel: 'Calendario' }}
-              />
-              <Tab.Screen 
-                name="KPIs" 
-                component={StatsScreen} 
-                options={{ tabBarLabel: 'KPIs' }}
-              />
-              <Tab.Screen 
-                name="Usuarios" 
-                component={require('./src/screens/Users').default} 
-                options={{ tabBarLabel: 'Usuarios' }}
-              />
-              <Tab.Screen 
-                name="Ubicaciones" 
-                component={LocationsScreen} 
-                options={{ tabBarLabel: 'Ubicaciones' }}
-              />
-              <Tab.Screen 
-                name="Perfil" 
-                component={ProfileStackNavigator} 
-                options={{ tabBarLabel: 'Perfil' }}
-              />
-            </Tab.Navigator>
-          </NavigationContainer>
-        </SafeAreaProvider>
-      </SyncProvider>
-    </DatabaseProvider>
+    <AuthProvider>
+      <DatabaseProvider>
+        <SyncProvider>
+          <AppNavigator />
+        </SyncProvider>
+      </DatabaseProvider>
+    </AuthProvider>
   );
 };
 
