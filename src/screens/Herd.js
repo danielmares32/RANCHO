@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { AnimalService } from '../services/DataService';
@@ -78,31 +78,70 @@ export default function HerdScreen({ navigation, route }) {
     </TouchableOpacity>
   );
 
-  const renderAnimalItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.animalCard}
-      onPress={() => navigation.navigate('AnimalDetail', { animalId: item.id_animal })}
-    >
-      <View style={styles.animalHeader}>
-        <Text style={styles.animalTag}>{item.id_interno}</Text>
-        <View style={[
-          styles.statusIndicator,
-          { backgroundColor: item.estatus === 'Activa' ? COLORS.success : COLORS.warning }
-        ]} />
-      </View>
-      <Text style={styles.animalName}>{item.nombre}</Text>
-      <View style={styles.animalDetails}>
-        <View style={styles.detailItem}>
-          <Ionicons name="pricetag" size={14} color={COLORS.textSecondary} />
-          <Text style={styles.detailText}>{item.raza}</Text>
+  const getFirstPhotoUrl = (photoData) => {
+    if (!photoData) return null;
+
+    try {
+      const parsed = JSON.parse(photoData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed[0].url;
+      } else if (parsed.url) {
+        return parsed.url;
+      }
+    } catch {
+      // Old format - just URL string
+      return photoData;
+    }
+    return null;
+  };
+
+  const renderAnimalItem = ({ item }) => {
+    const photoUrl = getFirstPhotoUrl(item.photo);
+
+    return (
+      <TouchableOpacity
+        style={styles.animalCard}
+        onPress={() => navigation.navigate('AnimalDetail', { animalId: item.id_animal })}
+      >
+        <View style={styles.animalCardContent}>
+          {/* Photo Thumbnail */}
+          {photoUrl ? (
+            <Image
+              source={{ uri: photoUrl }}
+              style={styles.animalPhoto}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.animalPhotoPlaceholder}>
+              <Ionicons name="image-outline" size={24} color={COLORS.textSecondary} />
+            </View>
+          )}
+
+        {/* Animal Info */}
+        <View style={styles.animalInfo}>
+          <View style={styles.animalHeader}>
+            <Text style={styles.animalTag}>{item.id_interno}</Text>
+            <View style={[
+              styles.statusIndicator,
+              { backgroundColor: item.estatus === 'Activa' ? COLORS.success : COLORS.warning }
+            ]} />
+          </View>
+          <Text style={styles.animalName}>{item.nombre}</Text>
+          <View style={styles.animalDetails}>
+            <View style={styles.detailItem}>
+              <Ionicons name="pricetag" size={14} color={COLORS.textSecondary} />
+              <Text style={styles.detailText}>{item.raza}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="calendar" size={14} color={COLORS.textSecondary} />
+              <Text style={styles.detailText}>{item.fecha_nacimiento || 'Sin fecha'}</Text>
+            </View>
+          </View>
+          </View>
         </View>
-        <View style={styles.detailItem}>
-          <Ionicons name="calendar" size={14} color={COLORS.textSecondary} />
-          <Text style={styles.detailText}>{item.fecha_nacimiento || 'Sin fecha'}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -222,13 +261,35 @@ const styles = StyleSheet.create({
   animalCard: {
     backgroundColor: 'white',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 1,
+  },
+  animalCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  animalPhoto: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  animalPhotoPlaceholder: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  animalInfo: {
+    flex: 1,
   },
   animalHeader: {
     flexDirection: 'row',

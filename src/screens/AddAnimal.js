@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Image
+  Image,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
 import { useSync } from '../context/SyncContext';
 import { AnimalService } from '../services/DataService';
+import StorageService from '../services/StorageService';
+import LocalPhotoService from '../services/LocalPhotoService';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -34,6 +37,8 @@ const AddAnimal = ({ navigation, route }) => {
     estatus: 'Activa'
   });
   const [image, setImage] = useState(null);
+  const [images, setImages] = useState([]); // Array of selected images
+  const [uploading, setUploading] = useState(false);
   const [locationOptions, setLocationOptions] = useState([
     // Default fallback if none passed
     { label: 'Potrero 1', value: 'Potrero 1' },
@@ -72,10 +77,17 @@ const AddAnimal = ({ navigation, route }) => {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.7,
+      quality: 0.5, // Reduced for smaller file size
+      base64: false,
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImage(result.assets[0].uri);
+      const newImage = result.assets[0].uri;
+      console.log('Image picked:', newImage);
+      console.log('Image size:', result.assets[0].fileSize, 'bytes');
+
+      // Add to images array for multiple photo support
+      setImages(prev => [...prev, newImage]);
+      setImage(newImage); // Keep for backward compatibility
     }
   };
 
@@ -88,10 +100,17 @@ const AddAnimal = ({ navigation, route }) => {
     let result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.7,
+      quality: 0.5, // Reduced for smaller file size
+      base64: false,
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImage(result.assets[0].uri);
+      const newImage = result.assets[0].uri;
+      console.log('Photo taken:', newImage);
+      console.log('Photo size:', result.assets[0].fileSize, 'bytes');
+
+      // Add to images array for multiple photo support
+      setImages(prev => [...prev, newImage]);
+      setImage(newImage); // Keep for backward compatibility
     }
   };
 
@@ -103,14 +122,66 @@ const AddAnimal = ({ navigation, route }) => {
     }
 
     try {
-      // Guardar en la base de datos SQLite
+      setUploading(true);
+      let photoUri = null;
+
+      if (image) {
+        if (Platform.OS === 'web') {
+          // Web: Upload immediately to Supabase (requires internet)
+          try {
+            photoUri = await StorageService.uploadPhoto(image);
+            console.log('Photo uploaded to Supabase Storage (web):', photoUri);
+          } catch (uploadError) {
+            console.error('Error uploading photo:', uploadError);
+            Alert.alert(
+              'Error al subir foto',
+              'No se pudo subir la foto. ¿Deseas continuar sin foto?',
+              [
+                { text: 'Cancelar', style: 'cancel', onPress: () => setUploading(false) },
+                { text: 'Continuar', onPress: () => saveAnimal(null) }
+              ]
+            );
+            return;
+          }
+        } else {
+          // Mobile: Save locally, upload later during sync
+          try {
+            photoUri = await LocalPhotoService.savePhotoLocally(image);
+            console.log('Photo saved locally (mobile):', photoUri);
+          } catch (saveError) {
+            console.error('Error saving photo locally:', saveError);
+            Alert.alert(
+              'Error al guardar foto',
+              'No se pudo guardar la foto localmente. ¿Deseas continuar sin foto?',
+              [
+                { text: 'Cancelar', style: 'cancel', onPress: () => setUploading(false) },
+                { text: 'Continuar', onPress: () => saveAnimal(null) }
+              ]
+            );
+            return;
+          }
+        }
+      }
+
+      await saveAnimal(photoUri);
+    } catch (error) {
+      console.error('Error guardando animal:', error);
+      Alert.alert('Error', error.message || 'No se pudo guardar el animal');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const saveAnimal = async (photoUrl) => {
+    try {
+      // Guardar en la base de datos
       const result = await AnimalService.insertAnimal({
         ...animalData,
-        photo: image,
+        photo: photoUrl,
         location,
       });
       console.log('Animal guardado con ID:', result.id_animal);
-      
+
       // Añadir cambio pendiente para sincronización
       addPendingChange();
 
@@ -241,9 +312,22 @@ const AddAnimal = ({ navigation, route }) => {
 
           {/* Save Button Section */}
           <View style={styles.section}>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Ionicons name="save" size={20} color="#fff" />
-              <Text style={styles.saveBtnText}>{saveSuccessMessage || 'Agregar'}</Text>
+            <TouchableOpacity
+              style={[styles.saveBtn, uploading && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={styles.saveBtnText}>Guardando...</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="save" size={20} color="#fff" />
+                  <Text style={styles.saveBtnText}>{saveSuccessMessage || 'Agregar'}</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -412,6 +496,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#95a5a6',
+    opacity: 0.7,
   },
   saveBtnText: {
     color: 'white',

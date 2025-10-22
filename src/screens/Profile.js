@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSync } from '../context/SyncContext';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../services/AuthService';
+import StorageService from '../services/StorageService';
 import { COLORS } from '../constants/colors';
 
 export default function ProfileScreen({ navigation }) {
@@ -56,6 +57,43 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  const testStorageConnection = async () => {
+    Alert.alert('Probando Storage', 'Verificando conexión...');
+
+    try {
+      // Test 1: Check bucket
+      const bucketExists = await StorageService.checkBucketExists();
+
+      if (!bucketExists) {
+        Alert.alert(
+          'Error de Storage',
+          'El bucket "animal-photos" no existe o no es accesible.\n\nVerifica que:\n1. El bucket existe en Supabase\n2. Las políticas RLS están configuradas'
+        );
+        return;
+      }
+
+      // Test 2: Try upload
+      const uploadSuccess = await StorageService.testUpload();
+
+      if (uploadSuccess) {
+        Alert.alert(
+          'Storage OK ✅',
+          'El bucket está configurado correctamente y las subidas funcionan!'
+        );
+      } else {
+        Alert.alert(
+          'Error de Upload',
+          'El bucket existe pero no se puede subir archivos.\n\nVerifica las políticas INSERT en Supabase Storage.'
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        `Error al probar storage: ${error.message}`
+      );
+    }
+  };
+
   const menuItems = [
     { 
       id: 'animals', 
@@ -81,11 +119,17 @@ export default function ProfileScreen({ navigation }) {
       title: 'Configuración',
       onPress: () => navigation.navigate('Settings') 
     },
-    { 
-      id: 'database', 
-      icon: 'server', 
+    {
+      id: 'database',
+      icon: 'server',
       title: 'Pruebas de Base de Datos',
       onPress: () => navigation.navigate('DatabaseTest')
+    },
+    {
+      id: 'storage-test',
+      icon: 'cloud-upload',
+      title: '🔧 Probar Storage',
+      onPress: testStorageConnection
     },
     { 
       id: 'help', 

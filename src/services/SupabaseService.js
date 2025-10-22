@@ -1,5 +1,8 @@
 import supabase from '../config/supabase';
 import DatabaseService from './DatabaseService';
+import StorageService from './StorageService';
+import LocalPhotoService from './LocalPhotoService';
+import { Platform } from 'react-native';
 
 /**
  * SupabaseService - Handles synchronization between local SQLite and Supabase
@@ -31,6 +34,29 @@ class SupabaseService {
 
       for (const animal of pendingAnimals) {
         try {
+          let photoUrl = animal.photo;
+
+          // If photo is local (not yet uploaded), upload it now
+          if (Platform.OS !== 'web' && photoUrl && LocalPhotoService.isLocalPhoto(photoUrl)) {
+            try {
+              console.log(`SupabaseService: Uploading photo for animal ${animal.id_interno}...`);
+              const uploadedUrl = await StorageService.uploadPhoto(photoUrl, animal.id_animal);
+              photoUrl = uploadedUrl;
+
+              // Update local database with new URL
+              await DatabaseService.runAsync(
+                'UPDATE Animales SET photo = ? WHERE id_animal = ?',
+                [uploadedUrl, animal.id_animal]
+              );
+
+              console.log(`SupabaseService: Photo uploaded successfully for ${animal.id_interno}`);
+            } catch (uploadError) {
+              console.error(`SupabaseService: Failed to upload photo for ${animal.id_interno}:`, uploadError);
+              // Continue without photo rather than failing entire sync
+              photoUrl = null;
+            }
+          }
+
           // Prepare data for Supabase (convert TEXT dates to proper dates)
           const supabaseData = {
             nombre: animal.nombre,
@@ -41,7 +67,7 @@ class SupabaseService {
             sexo: animal.sexo,
             estado_fisiologico: animal.estado_fisiologico,
             estatus: animal.estatus,
-            photo: animal.photo,
+            photo: photoUrl,
             location: animal.location,
             local_id: animal.id_animal.toString(),
           };
