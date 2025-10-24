@@ -52,3 +52,6 @@ logs
 
 # Config (optional - uncomment if you want to ignore Supabase config)
 # src/config/supabase.js
+
+# Claude Flow
+.claude-flow

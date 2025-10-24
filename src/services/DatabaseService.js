@@ -122,6 +122,20 @@ class DatabaseService {
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS Users (
+        id_user INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        full_name TEXT,
+        email TEXT,
+        role TEXT CHECK(role IN ('admin', 'manager', 'user')) DEFAULT 'user',
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        last_login TEXT,
+        sync_status TEXT DEFAULT 'pending' NOT NULL
+      );
+      INSERT OR IGNORE INTO Users (username, password_hash, full_name, role, sync_status)
+      VALUES ('admin', 'admin123', 'Administrador', 'admin', 'synced');
     `;
 
     try {
