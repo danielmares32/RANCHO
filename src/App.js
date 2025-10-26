@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar, View, Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -9,6 +10,7 @@ import HomeScreen from './screens/Home';
 import HerdScreen from './screens/Herd';
 import CalendarScreen from './screens/Calendar';
 import StatsScreen from './screens/Stats';
+import SettingsScreen from './screens/Settings';
 import ProfileScreen from './screens/Profile';
 
 // Context
@@ -18,6 +20,20 @@ import { SyncProvider } from './context/SyncContext';
 import DatabaseService from './services/DatabaseService';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+// Settings Stack Navigator
+function SettingsStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="SettingsMain" component={SettingsScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Users" component={require('./screens/Users').default} />
+      <Stack.Screen name="DatabaseTest" component={require('./screens/DatabaseTest').default} />
+      <Stack.Screen name="Help" component={require('./screens/Help').default} />
+    </Stack.Navigator>
+  );
+}
 
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
@@ -76,10 +92,8 @@ export default function App() {
                 iconName = focused ? 'calendar' : 'calendar-outline';
               } else if (route.name === 'KPIs') {
                 iconName = focused ? 'stats-chart' : 'stats-chart-outline';
-              } else if (route.name === 'Perfil') {
-                iconName = focused ? 'person' : 'person-outline';
-              } else if (route.name === 'Usuarios') {
-                iconName = focused ? 'people' : 'people-outline';
+              } else if (route.name === 'Configuración') {
+                iconName = focused ? 'settings' : 'settings-outline';
               }
 
               return <Ionicons name={iconName} size={size} color={color} />;
@@ -94,8 +108,7 @@ export default function App() {
           <Tab.Screen name="Hato" component={HerdScreen} />
           <Tab.Screen name="Calendario" component={CalendarScreen} />
           <Tab.Screen name="KPIs" component={StatsScreen} />
-          <Tab.Screen name="Usuarios" component={require('./screens/Users').default} />
-          <Tab.Screen name="Perfil" component={ProfileScreen} />
+          <Tab.Screen name="Configuración" component={SettingsStack} />
         </Tab.Navigator>
       </NavigationContainer>
     </SyncProvider>

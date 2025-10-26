@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, Image, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { COLORS } from '../constants/colors';
@@ -109,6 +109,79 @@ export default function HerdScreen({ navigation, route }) {
     </TouchableOpacity>
   );
 
+  const handleDeleteAnimal = async (animal) => {
+    console.log('=== DELETE BUTTON PRESSED ===');
+    console.log('Animal object:', JSON.stringify(animal, null, 2));
+    console.log('Animal ID:', animal.id_animal);
+    console.log('Animal ID Interno:', animal.id_interno);
+
+    // Web compatibility: use window.confirm for web, Alert.alert for native
+    const confirmDelete = async () => {
+      console.log('=== DELETE CONFIRMED ===');
+      console.log('About to delete animal ID:', animal.id_animal);
+      try {
+        console.log('Calling AnimalService.deleteAnimal...');
+        const result = await AnimalService.deleteAnimal(animal.id_animal);
+        console.log('Delete result:', result);
+        console.log('Animal deleted successfully, reloading list...');
+        await loadAnimals();
+        console.log('List reloaded');
+
+        if (Platform.OS === 'web') {
+          window.alert('Animal eliminado correctamente');
+        } else {
+          Alert.alert('Éxito', 'Animal eliminado correctamente');
+        }
+      } catch (error) {
+        console.error('=== DELETE ERROR ===');
+        console.error('Error object:', error);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+
+        if (Platform.OS === 'web') {
+          window.alert(`No se pudo eliminar el animal: ${error.message}`);
+        } else {
+          Alert.alert('Error', `No se pudo eliminar el animal: ${error.message}`);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      // Use window.confirm on web
+      const confirmed = window.confirm(
+        `¿Estás seguro que deseas eliminar a ${animal.nombre || animal.id_interno}?`
+      );
+      if (confirmed) {
+        await confirmDelete();
+      } else {
+        console.log('Delete cancelled');
+      }
+    } else {
+      // Use Alert.alert on native platforms
+      Alert.alert(
+        'Eliminar Animal',
+        `¿Estás seguro que deseas eliminar a ${animal.nombre || animal.id_interno}?`,
+        [
+          {
+            text: 'Cancelar',
+            style: 'cancel',
+            onPress: () => console.log('Delete cancelled')
+          },
+          {
+            text: 'Eliminar',
+            style: 'destructive',
+            onPress: confirmDelete
+          }
+        ]
+      );
+    }
+  };
+
+  const handleEditAnimal = (animal) => {
+    console.log('Edit button pressed for animal:', animal.id_animal, animal.id_interno);
+    navigation.navigate('AddAnimal', { animalId: animal.id_animal, editMode: true });
+  };
+
   const getFirstPhotoUrl = (photoData) => {
     if (!photoData) return null;
 
@@ -130,11 +203,11 @@ export default function HerdScreen({ navigation, route }) {
     const photoUrl = getFirstPhotoUrl(item.photo);
 
     return (
-      <TouchableOpacity
-        style={styles.animalCard}
-        onPress={() => navigation.navigate('AnimalDetail', { animalId: item.id_animal })}
-      >
-        <View style={styles.animalCardContent}>
+      <View style={styles.animalCard}>
+        <TouchableOpacity
+          style={styles.animalCardContent}
+          onPress={() => navigation.navigate('AnimalDetail', { animalId: item.id_animal })}
+        >
           {/* Photo Thumbnail */}
           {photoUrl ? (
             <Image
@@ -148,29 +221,55 @@ export default function HerdScreen({ navigation, route }) {
             </View>
           )}
 
-        {/* Animal Info */}
-        <View style={styles.animalInfo}>
-          <View style={styles.animalHeader}>
-            <Text style={styles.animalTag}>{item.id_interno}</Text>
-            <View style={[
-              styles.statusIndicator,
-              { backgroundColor: item.estatus === 'Activa' ? COLORS.success : COLORS.warning }
-            ]} />
-          </View>
-          <Text style={styles.animalName}>{item.nombre}</Text>
-          <View style={styles.animalDetails}>
-            <View style={styles.detailItem}>
-              <Ionicons name="pricetag" size={14} color={COLORS.textSecondary} />
-              <Text style={styles.detailText}>{item.raza}</Text>
+          {/* Animal Info */}
+          <View style={styles.animalInfo}>
+            <View style={styles.animalHeader}>
+              <Text style={styles.animalTag}>{item.id_interno}</Text>
+              <View style={[
+                styles.statusIndicator,
+                { backgroundColor: item.estatus === 'Activa' ? COLORS.success : COLORS.warning }
+              ]} />
             </View>
-            <View style={styles.detailItem}>
-              <Ionicons name="calendar" size={14} color={COLORS.textSecondary} />
-              <Text style={styles.detailText}>{item.fecha_nacimiento || 'Sin fecha'}</Text>
+            <Text style={styles.animalName}>{item.nombre}</Text>
+            <View style={styles.animalDetails}>
+              <View style={styles.detailItem}>
+                <Ionicons name="pricetag" size={14} color={COLORS.textSecondary} />
+                <Text style={styles.detailText}>{item.raza}</Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Ionicons name="calendar" size={14} color={COLORS.textSecondary} />
+                <Text style={styles.detailText}>{item.fecha_nacimiento || 'Sin fecha'}</Text>
+              </View>
             </View>
           </View>
-          </View>
+        </TouchableOpacity>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.editButton]}
+            onPress={(e) => {
+              console.log('EDIT BUTTON TAPPED');
+              e?.stopPropagation?.();
+              handleEditAnimal(item);
+            }}
+            activeOpacity={0.6}
+          >
+            <Ionicons name="create-outline" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={(e) => {
+              console.log('DELETE BUTTON TAPPED');
+              e?.stopPropagation?.();
+              handleDeleteAnimal(item);
+            }}
+            activeOpacity={0.6}
+          >
+            <Ionicons name="trash-outline" size={20} color={COLORS.danger} />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -325,6 +424,32 @@ const styles = StyleSheet.create({
   animalCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    gap: 8,
+  },
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  editButton: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#f0f9ff',
+  },
+  deleteButton: {
+    borderColor: COLORS.danger,
+    backgroundColor: '#fef2f2',
   },
   animalPhoto: {
     width: 70,

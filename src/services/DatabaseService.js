@@ -332,7 +332,7 @@ export class AnimalService {
   }
   
   static async updateAnimal(animalData) {
-    const { id_animal, nombre, id_siniiga, id_interno, raza, fecha_nacimiento, sexo, estado_fisiologico, estatus } = animalData;
+    const { id_animal, nombre, id_siniiga, id_interno, raza, fecha_nacimiento, sexo, estado_fisiologico, estatus, photo, location } = animalData;
     if (!id_animal) throw new Error('ID del animal es requerido para actualizar.');
     if (!id_interno || id_interno.trim() === '') throw new Error('El ID interno es obligatorio.');
 
@@ -342,7 +342,7 @@ export class AnimalService {
       if (parts.length === 3) formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
     }
 
-    const sql = `UPDATE Animales SET 
+    const sql = `UPDATE Animales SET
                     nombre = ?,
                     id_siniiga = ?,
                     id_interno = ?,
@@ -351,7 +351,9 @@ export class AnimalService {
                     sexo = ?,
                     estado_fisiologico = ?,
                     estatus = ?,
-                    sync_status = 'pending' 
+                    photo = ?,
+                    location = ?,
+                    sync_status = 'pending'
                  WHERE id_animal = ?`;
     const params = [
         nombre || null,
@@ -362,6 +364,8 @@ export class AnimalService {
         sexo || 'Hembra',
         estado_fisiologico || null,
         estatus || 'Activa',
+        photo || null,
+        location || null,
         id_animal
     ];
     try {

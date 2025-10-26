@@ -13,6 +13,7 @@ import HerdScreen from './src/screens/Herd';
 import CalendarScreen from './src/screens/Calendar';
 import StatsScreen from './src/screens/Stats';
 import ProfileScreen from './src/screens/Profile';
+import SettingsScreen from './src/screens/Settings';
 import AnimalDetail from './src/screens/AnimalDetail';
 import LocationsScreen from './src/screens/Locations';
 
@@ -97,26 +98,18 @@ const CalendarStackNavigator = () => (
   </CalendarStack.Navigator>
 );
 
-// Stack Navigator para la sección de Perfil
-const ProfileStack = createNativeStackNavigator();
-const ProfileStackNavigator = () => {
+// Stack Navigator para la sección de Configuración (Settings)
+const SettingsStack = createNativeStackNavigator();
+const SettingsStackNavigator = () => {
   return (
-    <ProfileStack.Navigator>
-      <ProfileStack.Screen 
-        name="Profile" 
-        component={ProfileScreen}
-        options={{ headerShown: false }}
-      />
-      <ProfileStack.Screen 
-        name="DatabaseTest" 
-        component={DatabaseTestScreen} 
-        options={{ 
-          title: 'Pruebas de Base de Datos',
-          headerShown: true,
-          headerBackTitle: 'Atrás'
-        }}
-      />
-    </ProfileStack.Navigator>
+    <SettingsStack.Navigator screenOptions={{ headerShown: false }}>
+      <SettingsStack.Screen name="SettingsMain" component={SettingsScreen} />
+      <SettingsStack.Screen name="Profile" component={ProfileScreen} />
+      <SettingsStack.Screen name="Users" component={require('./src/screens/Users').default} />
+      <SettingsStack.Screen name="Locations" component={LocationsScreen} />
+      <SettingsStack.Screen name="DatabaseTest" component={DatabaseTestScreen} />
+      <SettingsStack.Screen name="Help" component={require('./src/screens/Help').default} />
+    </SettingsStack.Navigator>
   );
 };
 
@@ -137,14 +130,8 @@ const getTabBarIcon = (route, focused, color, size) => {
     case 'KPIs':
       iconName = focused ? 'stats-chart' : 'stats-chart-outline';
       break;
-    case 'Perfil':
-      iconName = focused ? 'person' : 'person-outline';
-      break;
-    case 'Usuarios':
-      iconName = focused ? 'people' : 'people-outline';
-      break;
-    case 'Ubicaciones':
-      iconName = focused ? 'map' : 'map-outline';
+    case 'Configuración':
+      iconName = focused ? 'settings' : 'settings-outline';
       break;
     default:
       iconName = 'alert';
@@ -234,25 +221,10 @@ const AppNavigator = () => {
             component={StatsScreen}
             options={{ tabBarLabel: 'KPIs' }}
           />
-
-          {/* Only show Users tab if user has permission */}
-          {hasPermission(PERMISSIONS.USERS_READ) && (
-            <Tab.Screen
-              name="Usuarios"
-              component={require('./src/screens/Users').default}
-              options={{ tabBarLabel: 'Usuarios' }}
-            />
-          )}
-
           <Tab.Screen
-            name="Ubicaciones"
-            component={LocationsScreen}
-            options={{ tabBarLabel: 'Ubicaciones' }}
-          />
-          <Tab.Screen
-            name="Perfil"
-            component={ProfileStackNavigator}
-            options={{ tabBarLabel: 'Perfil' }}
+            name="Configuración"
+            component={SettingsStackNavigator}
+            options={{ tabBarLabel: 'Config' }}
           />
         </Tab.Navigator>
       </NavigationContainer>

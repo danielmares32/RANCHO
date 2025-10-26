@@ -92,7 +92,7 @@ export class WebAnimalService {
   }
 
   static async updateAnimal(animalData) {
-    const { id_animal, nombre, id_siniiga, id_interno, raza, fecha_nacimiento, sexo, estado_fisiologico, estatus } = animalData;
+    const { id_animal, nombre, id_siniiga, id_interno, raza, fecha_nacimiento, sexo, estado_fisiologico, estatus, photo, location } = animalData;
 
     if (!id_animal) throw new Error('ID del animal es requerido para actualizar.');
     if (!id_interno || id_interno.trim() === '') throw new Error('El ID interno es obligatorio.');
@@ -109,6 +109,8 @@ export class WebAnimalService {
           sexo: sexo || 'Hembra',
           estado_fisiologico: estado_fisiologico || null,
           estatus: estatus || 'Activa',
+          photo: photo || null,
+          location: location || null,
         })
         .eq('id_animal', id_animal);
 

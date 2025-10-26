@@ -50,14 +50,60 @@ const AddAnimal = ({ navigation, route }) => {
     { label: 'Otro', value: 'Otro' },
   ]);
   const [location, setLocation] = useState('');
+  const [loading, setLoading] = useState(false);
 
+  // Check if we're in edit mode
+  const isEditMode = route?.params?.editMode === true;
+  const animalId = route?.params?.animalId;
+
+  // Load animal data if in edit mode
   useFocusEffect(
     React.useCallback(() => {
+      const loadAnimalData = async () => {
+        if (isEditMode && animalId) {
+          try {
+            setLoading(true);
+            console.log('Loading animal data for edit, ID:', animalId);
+            const animal = await AnimalService.getAnimalById(animalId);
+
+            if (animal) {
+              console.log('Animal found:', animal);
+              setAnimalData({
+                nombre: animal.nombre || '',
+                id_siniiga: animal.id_siniiga || '',
+                id_interno: animal.id_interno || '',
+                raza: animal.raza || '',
+                fecha_nacimiento: animal.fecha_nacimiento || '',
+                sexo: animal.sexo || 'Hembra',
+                estado_fisiologico: animal.estado_fisiologico || '',
+                estatus: animal.estatus || 'Activa'
+              });
+              setLocation(animal.location || '');
+              if (animal.photo) {
+                setImage(animal.photo);
+              }
+            } else {
+              console.error('Animal not found with ID:', animalId);
+              Alert.alert('Error', 'No se encontró el animal');
+              navigation.goBack();
+            }
+          } catch (error) {
+            console.error('Error loading animal:', error);
+            Alert.alert('Error', 'No se pudo cargar el animal');
+            navigation.goBack();
+          } finally {
+            setLoading(false);
+          }
+        }
+      };
+
+      loadAnimalData();
+
       // Try to get locations from navigation params (if coming from LocationsScreen)
       if (route && route.params && route.params.locations) {
         setLocationOptions(route.params.locations.map(l => ({ label: l.name, value: l.name })));
       }
-    }, [route])
+    }, [route, isEditMode, animalId])
   );
 
   const handleChange = (field, value) => {
@@ -202,23 +248,45 @@ const AddAnimal = ({ navigation, route }) => {
 
   const saveAnimal = async (photoUrl) => {
     try {
-      // Guardar en la base de datos
-      const result = await AnimalService.insertAnimal({
-        ...animalData,
-        photo: photoUrl,
-        location,
-      });
-      console.log('Animal guardado con ID:', result.id_animal);
+      if (isEditMode && animalId) {
+        // Update existing animal
+        console.log('Updating animal with ID:', animalId);
+        await AnimalService.updateAnimal({
+          id_animal: animalId,
+          ...animalData,
+          photo: photoUrl !== null ? photoUrl : image, // Keep existing photo if no new one uploaded
+          location,
+        });
+        console.log('Animal actualizado correctamente');
 
-      // Añadir cambio pendiente para sincronización
-      addPendingChange();
+        // Añadir cambio pendiente para sincronización
+        addPendingChange();
 
-      // Mostrar mensaje de éxito y regresar
-      setSaveSuccessMessage('Animal agregado correctamente!');
-      setTimeout(() => {
-        setSaveSuccessMessage('');
-        navigation.goBack();
-      }, 2000);
+        // Mostrar mensaje de éxito y regresar
+        setSaveSuccessMessage('Animal actualizado correctamente!');
+        setTimeout(() => {
+          setSaveSuccessMessage('');
+          navigation.goBack();
+        }, 2000);
+      } else {
+        // Insert new animal
+        const result = await AnimalService.insertAnimal({
+          ...animalData,
+          photo: photoUrl,
+          location,
+        });
+        console.log('Animal guardado con ID:', result.id_animal);
+
+        // Añadir cambio pendiente para sincronización
+        addPendingChange();
+
+        // Mostrar mensaje de éxito y regresar
+        setSaveSuccessMessage('Animal agregado correctamente!');
+        setTimeout(() => {
+          setSaveSuccessMessage('');
+          navigation.goBack();
+        }, 2000);
+      }
     } catch (error) {
       console.error('Error al guardar animal:', error);
       Alert.alert('Error', 'No se pudo guardar el animal. Intente nuevamente.');
@@ -240,23 +308,34 @@ const AddAnimal = ({ navigation, route }) => {
     </View>
   );
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={{ marginTop: 16, color: COLORS.textSecondary }}>Cargando datos del animal...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Agregar Animal</Text>
+          <Text style={styles.headerTitle}>{isEditMode ? 'Editar Animal' : 'Agregar Animal'}</Text>
           <View style={{ width: 24 }} />
         </View>
-        
+
         <ScrollView style={styles.formContainer}>
           {/* Animal Details Section */}
           <View style={styles.section}>
@@ -353,7 +432,9 @@ const AddAnimal = ({ navigation, route }) => {
               ) : (
                 <>
                   <Ionicons name="save" size={20} color="#fff" />
-                  <Text style={styles.saveBtnText}>{saveSuccessMessage || 'Agregar'}</Text>
+                  <Text style={styles.saveBtnText}>
+                    {saveSuccessMessage || (isEditMode ? 'Actualizar' : 'Agregar')}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
