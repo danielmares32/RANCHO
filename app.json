@@ -19,6 +19,20 @@
     },
     "plugins": [
       "expo-sqlite"
-    ]
+    ],
+    "android": {
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "usesCleartextTraffic": true,
+      "package": "com.danielmares32.farmsyncapp"
+    },
+    "ios": {
+      "supportsTablet": true
+    }
   }
 }

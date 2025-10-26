@@ -127,21 +127,49 @@ const AddAnimal = ({ navigation, route }) => {
 
       if (image) {
         if (Platform.OS === 'web') {
-          // Web: Upload immediately to Supabase (requires internet)
+          // Web: Try to upload to Supabase, fallback to local storage if offline
           try {
             photoUri = await StorageService.uploadPhoto(image);
             console.log('Photo uploaded to Supabase Storage (web):', photoUri);
           } catch (uploadError) {
             console.error('Error uploading photo:', uploadError);
-            Alert.alert(
-              'Error al subir foto',
-              'No se pudo subir la foto. ¿Deseas continuar sin foto?',
-              [
-                { text: 'Cancelar', style: 'cancel', onPress: () => setUploading(false) },
-                { text: 'Continuar', onPress: () => saveAnimal(null) }
-              ]
-            );
-            return;
+
+            // Check if it's a network error (offline)
+            const isNetworkError = uploadError.message?.includes('Failed to fetch') ||
+                                   uploadError.message?.includes('Network') ||
+                                   uploadError.message?.includes('CONNECTION');
+
+            if (isNetworkError) {
+              // Save locally instead when offline
+              console.log('Network error detected, saving photo locally...');
+              try {
+                photoUri = await LocalPhotoService.savePhotoLocally(image);
+                console.log('Photo saved locally (web, offline):', photoUri);
+              } catch (localSaveError) {
+                console.error('Error saving photo locally:', localSaveError);
+                Alert.alert(
+                  'Error al guardar foto',
+                  'No se pudo guardar la foto. ¿Deseas continuar sin foto?',
+                  [
+                    { text: 'Cancelar', style: 'cancel', onPress: () => setUploading(false) },
+                    { text: 'Continuar', onPress: () => saveAnimal(null) }
+                  ]
+                );
+                return;
+              }
+            } else {
+              // Other upload errors
+              const errorMessage = uploadError.message || 'Error desconocido';
+              Alert.alert(
+                'Error al subir foto',
+                `${errorMessage}\n\n¿Deseas continuar sin foto?`,
+                [
+                  { text: 'Cancelar', style: 'cancel', onPress: () => setUploading(false) },
+                  { text: 'Continuar', onPress: () => saveAnimal(null) }
+                ]
+              );
+              return;
+            }
           }
         } else {
           // Mobile: Save locally, upload later during sync

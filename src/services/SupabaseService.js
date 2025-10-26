@@ -374,6 +374,338 @@ class SupabaseService {
       return false;
     }
   }
+
+  /**
+   * Download all animals from Supabase to local SQLite
+   */
+  static async downloadAnimales() {
+    try {
+      console.log('SupabaseService: Starting animals download from Supabase...');
+
+      // Fetch all animals from Supabase
+      const { data: supabaseAnimals, error } = await supabase
+        .from('animales')
+        .select('*')
+        .order('id_interno', { ascending: true });
+
+      if (error) throw error;
+
+      if (!supabaseAnimals || supabaseAnimals.length === 0) {
+        console.log('SupabaseService: No animals found in Supabase');
+        return { downloaded: 0, failed: 0 };
+      }
+
+      console.log(`SupabaseService: Found ${supabaseAnimals.length} animals in Supabase`);
+
+      let downloaded = 0;
+      let failed = 0;
+
+      for (const animal of supabaseAnimals) {
+        try {
+          // Check if animal already exists locally by id_interno
+          const existingAnimal = await DatabaseService.getFirstAsync(
+            'SELECT id_animal FROM Animales WHERE id_interno = ?',
+            [animal.id_interno]
+          );
+
+          if (existingAnimal) {
+            // Update existing animal
+            await DatabaseService.runAsync(
+              `UPDATE Animales SET
+                nombre = ?,
+                id_siniiga = ?,
+                raza = ?,
+                fecha_nacimiento = ?,
+                sexo = ?,
+                estado_fisiologico = ?,
+                estatus = ?,
+                photo = ?,
+                location = ?,
+                sync_status = ?
+              WHERE id_interno = ?`,
+              [
+                animal.nombre,
+                animal.id_siniiga,
+                animal.raza,
+                animal.fecha_nacimiento,
+                animal.sexo,
+                animal.estado_fisiologico,
+                animal.estatus,
+                animal.photo,
+                animal.location,
+                'synced',
+                animal.id_interno
+              ]
+            );
+            console.log(`SupabaseService: Updated animal ${animal.id_interno}`);
+          } else {
+            // Insert new animal
+            await DatabaseService.runAsync(
+              `INSERT INTO Animales (
+                nombre, id_siniiga, id_interno, raza, fecha_nacimiento,
+                sexo, estado_fisiologico, estatus, photo, location, sync_status
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                animal.nombre,
+                animal.id_siniiga,
+                animal.id_interno,
+                animal.raza,
+                animal.fecha_nacimiento,
+                animal.sexo,
+                animal.estado_fisiologico,
+                animal.estatus,
+                animal.photo,
+                animal.location,
+                'synced'
+              ]
+            );
+            console.log(`SupabaseService: Downloaded animal ${animal.id_interno}`);
+          }
+
+          downloaded++;
+        } catch (error) {
+          console.error(`SupabaseService: Failed to download animal ${animal.id_interno}:`, error);
+          failed++;
+        }
+      }
+
+      console.log(`SupabaseService: Animals download complete. Downloaded: ${downloaded}, Failed: ${failed}`);
+      return { downloaded, failed };
+    } catch (error) {
+      console.error('SupabaseService: Error in downloadAnimales:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download all servicios from Supabase to local SQLite
+   */
+  static async downloadServicios() {
+    try {
+      console.log('SupabaseService: Starting servicios download from Supabase...');
+
+      const { data: supabaseServicios, error } = await supabase
+        .from('servicios')
+        .select('*');
+
+      if (error) throw error;
+
+      if (!supabaseServicios || supabaseServicios.length === 0) {
+        console.log('SupabaseService: No servicios found in Supabase');
+        return { downloaded: 0, failed: 0 };
+      }
+
+      let downloaded = 0;
+      let failed = 0;
+
+      for (const servicio of supabaseServicios) {
+        try {
+          // Get local animal ID by matching with Supabase animal's id_interno
+          const { data: supabaseAnimal } = await supabase
+            .from('animales')
+            .select('id_interno')
+            .eq('id_animal', servicio.id_animal)
+            .single();
+
+          if (!supabaseAnimal) {
+            console.error(`SupabaseService: Animal not found in Supabase for servicio`);
+            failed++;
+            continue;
+          }
+
+          const localAnimal = await DatabaseService.getFirstAsync(
+            'SELECT id_animal FROM Animales WHERE id_interno = ?',
+            [supabaseAnimal.id_interno]
+          );
+
+          if (!localAnimal) {
+            console.error(`SupabaseService: Local animal ${supabaseAnimal.id_interno} not found`);
+            failed++;
+            continue;
+          }
+
+          // Check if servicio already exists (by matching animal and date)
+          const existingServicio = await DatabaseService.getFirstAsync(
+            'SELECT id_servicio FROM Servicios WHERE id_animal = ? AND fecha_servicio = ? AND tipo_servicio = ?',
+            [localAnimal.id_animal, servicio.fecha_servicio, servicio.tipo_servicio]
+          );
+
+          if (!existingServicio) {
+            await DatabaseService.runAsync(
+              `INSERT INTO Servicios (
+                id_animal, fecha_servicio, tipo_servicio, toro, notas, sync_status
+              ) VALUES (?, ?, ?, ?, ?, ?)`,
+              [
+                localAnimal.id_animal,
+                servicio.fecha_servicio,
+                servicio.tipo_servicio,
+                servicio.toro,
+                servicio.notas,
+                'synced'
+              ]
+            );
+            downloaded++;
+          }
+        } catch (error) {
+          console.error('SupabaseService: Failed to download servicio:', error);
+          failed++;
+        }
+      }
+
+      console.log(`SupabaseService: Servicios download complete. Downloaded: ${downloaded}, Failed: ${failed}`);
+      return { downloaded, failed };
+    } catch (error) {
+      console.error('SupabaseService: Error in downloadServicios:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generic download function for related tables
+   */
+  static async _downloadTable(supabaseTableName, localTableName, idColumnName) {
+    try {
+      console.log(`SupabaseService: Starting ${supabaseTableName} download from Supabase...`);
+
+      const { data: supabaseRecords, error } = await supabase
+        .from(supabaseTableName)
+        .select('*');
+
+      if (error) throw error;
+
+      if (!supabaseRecords || supabaseRecords.length === 0) {
+        console.log(`SupabaseService: No ${supabaseTableName} found in Supabase`);
+        return { downloaded: 0, failed: 0 };
+      }
+
+      let downloaded = 0;
+      let failed = 0;
+
+      for (const record of supabaseRecords) {
+        try {
+          // Get local animal ID
+          const { data: supabaseAnimal } = await supabase
+            .from('animales')
+            .select('id_interno')
+            .eq('id_animal', record.id_animal)
+            .single();
+
+          if (!supabaseAnimal) {
+            failed++;
+            continue;
+          }
+
+          const localAnimal = await DatabaseService.getFirstAsync(
+            'SELECT id_animal FROM Animales WHERE id_interno = ?',
+            [supabaseAnimal.id_interno]
+          );
+
+          if (!localAnimal) {
+            failed++;
+            continue;
+          }
+
+          // Prepare data for insertion
+          const { id_animal, ...recordData } = record;
+          const columns = Object.keys(recordData).filter(key => !key.startsWith(idColumnName.replace('id_', '')));
+          columns.push('id_animal', 'sync_status');
+
+          const values = columns.map(col => {
+            if (col === 'id_animal') return localAnimal.id_animal;
+            if (col === 'sync_status') return 'synced';
+            return recordData[col];
+          });
+
+          const placeholders = columns.map(() => '?').join(', ');
+          const columnNames = columns.join(', ');
+
+          await DatabaseService.runAsync(
+            `INSERT OR IGNORE INTO ${localTableName} (${columnNames}) VALUES (${placeholders})`,
+            values
+          );
+          downloaded++;
+        } catch (error) {
+          console.error(`SupabaseService: Failed to download ${supabaseTableName} record:`, error);
+          failed++;
+        }
+      }
+
+      console.log(`SupabaseService: ${supabaseTableName} download complete. Downloaded: ${downloaded}, Failed: ${failed}`);
+      return { downloaded, failed };
+    } catch (error) {
+      console.error(`SupabaseService: Error in download${localTableName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download diagnosticos from Supabase
+   */
+  static async downloadDiagnosticos() {
+    return await this._downloadTable('diagnosticos', 'Diagnosticos', 'id_diagnostico');
+  }
+
+  /**
+   * Download partos from Supabase
+   */
+  static async downloadPartos() {
+    return await this._downloadTable('partos', 'Partos', 'id_parto');
+  }
+
+  /**
+   * Download ordenas from Supabase
+   */
+  static async downloadOrdenas() {
+    return await this._downloadTable('ordenas', 'Ordenas', 'id_ordena');
+  }
+
+  /**
+   * Download tratamientos from Supabase
+   */
+  static async downloadTratamientos() {
+    return await this._downloadTable('tratamientos', 'Tratamientos', 'id_tratamiento');
+  }
+
+  /**
+   * Download secados from Supabase
+   */
+  static async downloadSecados() {
+    return await this._downloadTable('secados', 'Secados', 'id_secado');
+  }
+
+  /**
+   * Download all data from Supabase to local SQLite
+   */
+  static async downloadAll() {
+    try {
+      console.log('SupabaseService: Starting full download from Supabase...');
+
+      const results = {
+        animales: await this.downloadAnimales(),
+        servicios: await this.downloadServicios(),
+        diagnosticos: await this.downloadDiagnosticos(),
+        partos: await this.downloadPartos(),
+        ordenas: await this.downloadOrdenas(),
+        tratamientos: await this.downloadTratamientos(),
+        secados: await this.downloadSecados(),
+      };
+
+      const totalDownloaded = Object.values(results).reduce((sum, r) => sum + r.downloaded, 0);
+      const totalFailed = Object.values(results).reduce((sum, r) => sum + r.failed, 0);
+
+      console.log(`SupabaseService: Full download complete. Total downloaded: ${totalDownloaded}, Total failed: ${totalFailed}`);
+
+      return {
+        success: totalFailed === 0,
+        totalDownloaded,
+        totalFailed,
+        details: results,
+      };
+    } catch (error) {
+      console.error('SupabaseService: Error in downloadAll:', error);
+      throw error;
+    }
+  }
 }
 
 export default SupabaseService;

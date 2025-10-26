@@ -1,49 +1,76 @@
 import * as SQLite from 'expo-sqlite';
 
-// Made asynchronous
-const openDBConnection = async () => {
-  try {
-    const db = await SQLite.openDatabaseAsync('farmsync.db');
-    console.log('DatabaseService: Connection opened successfully to farmsync.db');
-    return db;
-  } catch (error) {
-    console.error('DatabaseService: CRITICAL - Error opening database connection:', error);
-    throw error;
-  }
-};
-
 class DatabaseService {
   static dbInstance = null;
-  static initPromise = null; // Promise to ensure initDatabase is called once and awaited
+  static initPromise = null;
+  static isInitialized = false;
+  static queryQueue = Promise.resolve();
 
   static async getDB() {
     if (!DatabaseService.dbInstance) {
-      console.log('DatabaseService: No existing DB instance, creating new one.');
-      DatabaseService.dbInstance = await openDBConnection();
-
-      if (DatabaseService.dbInstance && !DatabaseService.initPromise) {
-        console.log('DatabaseService: DB instance created, starting initialization.');
-        DatabaseService.initPromise = DatabaseService.initDatabase(DatabaseService.dbInstance);
-      } else if (!DatabaseService.dbInstance) {
-        throw new Error('DatabaseService: Failed to obtain database instance.');
-      }
-    }
-    // Ensure initialization is complete before returning the db instance
-    if (DatabaseService.initPromise) {
-      await DatabaseService.initPromise;
+      console.log('DatabaseService: Opening database connection...');
+      DatabaseService.dbInstance = await SQLite.openDatabaseAsync('farmsync.db', {
+        useNewConnection: true
+      });
+      console.log('DatabaseService: Connection opened successfully to farmsync.db with useNewConnection');
     }
     return DatabaseService.dbInstance;
   }
 
-  static async initDatabase(db) {
-    if (!db) {
-      throw new Error('DatabaseService: DB instance not available for schema initialization.');
+  // Serialize all database operations to prevent concurrent access
+  static async withQueue(operation) {
+    const currentQueue = DatabaseService.queryQueue;
+    let resolver;
+    DatabaseService.queryQueue = new Promise(resolve => {
+      resolver = resolve;
+    });
+
+    try {
+      await currentQueue;
+      const result = await operation();
+      return result;
+    } finally {
+      resolver();
+    }
+  }
+
+  static async initialize() {
+    if (DatabaseService.isInitialized) {
+      console.log('DatabaseService: Already initialized');
+      return true;
     }
 
-    console.log('DatabaseService: Starting database schema initialization.');
-    const schemaSql = `
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS Animales (
+    if (DatabaseService.initPromise) {
+      console.log('DatabaseService: Waiting for ongoing initialization...');
+      return DatabaseService.initPromise;
+    }
+
+    DatabaseService.initPromise = this.withQueue(async () => {
+      try {
+        const db = await DatabaseService.getDB();
+        await DatabaseService.initDatabase(db);
+        DatabaseService.isInitialized = true;
+        console.log('DatabaseService: Initialization complete');
+        return true;
+      } catch (error) {
+        console.error('DatabaseService: Failed to initialize:', error);
+        DatabaseService.initPromise = null; // Reset on failure
+        throw error;
+      }
+    });
+
+    return DatabaseService.initPromise;
+  }
+
+  static async initDatabase(db) {
+    if (!db) {
+      throw new Error('DB instance not available');
+    }
+
+    console.log('DatabaseService: Starting database schema initialization...');
+
+    const schemaStatements = [
+      `CREATE TABLE IF NOT EXISTS Animales (
         id_animal INTEGER PRIMARY KEY AUTOINCREMENT,
         nombre TEXT,
         id_siniiga TEXT,
@@ -57,8 +84,8 @@ class DatabaseService {
         location TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         local_id TEXT
-      );
-      CREATE TABLE IF NOT EXISTS Servicios (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Servicios (
         id_servicio INTEGER PRIMARY KEY AUTOINCREMENT,
         id_animal INTEGER NOT NULL,
         fecha_servicio TEXT,
@@ -67,8 +94,8 @@ class DatabaseService {
         notas TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS Diagnosticos (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Diagnosticos (
         id_diagnostico INTEGER PRIMARY KEY AUTOINCREMENT,
         id_animal INTEGER NOT NULL,
         fecha_diagnostico TEXT,
@@ -77,8 +104,8 @@ class DatabaseService {
         notas TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS Partos (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Partos (
         id_parto INTEGER PRIMARY KEY AUTOINCREMENT,
         id_animal INTEGER NOT NULL,
         fecha_parto TEXT,
@@ -87,8 +114,8 @@ class DatabaseService {
         dias_abiertos INTEGER,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS Ordenas (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Ordenas (
         id_ordena INTEGER PRIMARY KEY AUTOINCREMENT,
         id_animal INTEGER NOT NULL,
         fecha_ordena TEXT,
@@ -98,8 +125,8 @@ class DatabaseService {
         dias_en_leche INTEGER,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS Tratamientos (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Tratamientos (
         id_tratamiento INTEGER PRIMARY KEY AUTOINCREMENT,
         id_animal INTEGER NOT NULL,
         fecha_inicio TEXT,
@@ -111,8 +138,8 @@ class DatabaseService {
         notas TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS Secados (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Secados (
         id_secado INTEGER PRIMARY KEY AUTOINCREMENT,
         id_animal INTEGER NOT NULL,
         fecha_planeada TEXT,
@@ -121,8 +148,8 @@ class DatabaseService {
         notas TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
         FOREIGN KEY (id_animal) REFERENCES Animales(id_animal) ON DELETE CASCADE
-      );
-      CREATE TABLE IF NOT EXISTS Users (
+      );`,
+      `CREATE TABLE IF NOT EXISTS Users (
         id_user INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
@@ -133,80 +160,92 @@ class DatabaseService {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         last_login TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL
-      );
-      INSERT OR IGNORE INTO Users (username, password_hash, full_name, role, sync_status)
-      VALUES ('admin', 'admin123', 'Administrador', 'admin', 'synced');
-    `;
+      );`,
+      `INSERT OR IGNORE INTO Users (username, password_hash, full_name, role, sync_status)
+       VALUES ('admin', 'admin123', 'Administrador', 'admin', 'synced');`
+    ];
 
     try {
-      await db.execAsync(schemaSql);
+      // Run all schema statements in a single transaction
+      await db.withTransactionAsync(async () => {
+        for (const statement of schemaStatements) {
+          if (statement.trim().startsWith('INSERT')) {
+            await db.runAsync(statement);
+          } else {
+            await db.execAsync(statement);
+          }
+        }
+      });
       console.log('DatabaseService: Database schema initialization completed successfully.');
     } catch (error) {
-      console.error('DatabaseService: Error during schema initialization with execAsync:', error);
+      console.error('DatabaseService: Error during schema initialization:', error);
       throw error;
     }
   }
 
   static async runAsync(sql, params = []) {
-    const db = await this.getDB();
-    console.log('DatabaseService: Executing runAsync:', { sql, params });
-    try {
-      const result = await db.runAsync(sql, params);
-      console.log('DatabaseService: runAsync executed successfully.');
-      return result; // { lastInsertRowId, changes }
-    } catch (error) {
-      console.error('DatabaseService: SQL Error with runAsync:', { sql, params, error });
-      throw error;
-    }
+    return this.withQueue(async () => {
+      const db = await this.getDB();
+      try {
+        // Use withTransactionAsync for more stable execution on Android
+        let result;
+        await db.withTransactionAsync(async () => {
+          result = await db.runAsync(sql, params);
+        });
+        return result;
+      } catch (error) {
+        console.error('DatabaseService: SQL Error with runAsync:', { sql, params, error });
+        throw error;
+      }
+    });
   }
 
   static async getFirstAsync(sql, params = []) {
-    const db = await this.getDB();
-    console.log('DatabaseService: Executing getFirstAsync:', { sql, params });
-    try {
-      const result = await db.getFirstAsync(sql, params);
-      console.log('DatabaseService: getFirstAsync executed successfully.');
-      return result; // row object or null
-    } catch (error) {
-      console.error('DatabaseService: SQL Error with getFirstAsync:', { sql, params, error });
-      throw error;
-    }
+    return this.withQueue(async () => {
+      const db = await this.getDB();
+      try {
+        // Use withTransactionAsync for more stable execution on Android
+        let result;
+        await db.withTransactionAsync(async () => {
+          result = await db.getFirstAsync(sql, params);
+        });
+        return result;
+      } catch (error) {
+        console.error('DatabaseService: SQL Error with getFirstAsync:', { sql, params, error });
+        throw error;
+      }
+    });
   }
 
   static async getAllAsync(sql, params = []) {
-    const db = await this.getDB();
-    console.log('DatabaseService: Executing getAllAsync:', { sql, params });
-    try {
-      const result = await db.getAllAsync(sql, params);
-      console.log('DatabaseService: getAllAsync executed successfully.');
-      return result; // array of row objects
-    } catch (error) {
-      console.error('DatabaseService: SQL Error with getAllAsync:', { sql, params, error });
-      throw error;
-    }
-  }
-  
-  static async execAsync(sql) {
-    const db = await this.getDB();
-    console.log('DatabaseService: Executing execAsync:', { sql });
-    try {
-      await db.execAsync(sql);
-      console.log('DatabaseService: execAsync executed successfully.');
-    } catch (error) {
-      console.error('DatabaseService: SQL Error with execAsync:', { sql, error });
-      throw error;
-    }
+    return this.withQueue(async () => {
+      const db = await this.getDB();
+      try {
+        // Use withTransactionAsync for more stable execution on Android
+        let result;
+        await db.withTransactionAsync(async () => {
+          result = await db.getAllAsync(sql, params);
+        });
+        return result;
+      } catch (error) {
+        console.error('DatabaseService: SQL Error with getAllAsync:', { sql, params, error });
+        throw error;
+      }
+    });
   }
 
-  static async initialize() {
-    try {
-      await this.getDB(); // Ensures DB is open and initialized
-      console.log('DatabaseService: Database initialized successfully via initialize() call.');
-      return true;
-    } catch (error) {
-      console.error('DatabaseService: Failed to initialize database via initialize() call:', error);
-      throw error;
-    }
+  static async execAsync(sql) {
+    return this.withQueue(async () => {
+      const db = await this.getDB();
+      try {
+        await db.withTransactionAsync(async () => {
+          await db.execAsync(sql);
+        });
+      } catch (error) {
+        console.error('DatabaseService: SQL Error with execAsync:', { sql, error });
+        throw error;
+      }
+    });
   }
 }
 
@@ -215,10 +254,10 @@ export class AnimalService {
   static async getAnimales() {
     try {
       const animales = await DatabaseService.getAllAsync('SELECT * FROM Animales ORDER BY id_interno ASC');
-      return animales;
+      return animales || [];
     } catch (error) {
       console.error('AnimalService: Error getting animales:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -353,10 +392,11 @@ export class AnimalService {
 export class ServicioService {
   static async getServicios() {
     try {
-      return await DatabaseService.getAllAsync('SELECT * FROM Servicios');
+      const result = await DatabaseService.getAllAsync('SELECT * FROM Servicios');
+      return result || [];
     } catch (error) {
       console.error('ServicioService: Error getting servicios:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -385,10 +425,11 @@ export class ServicioService {
 export class DiagnosticoService {
   static async getDiagnosticos() {
     try {
-      return await DatabaseService.getAllAsync('SELECT * FROM Diagnosticos');
+      const result = await DatabaseService.getAllAsync('SELECT * FROM Diagnosticos');
+      return result || [];
     } catch (error) {
       console.error('DiagnosticoService: Error getting diagnosticos:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -417,10 +458,11 @@ export class DiagnosticoService {
 export class PartoService {
   static async getPartos() {
     try {
-      return await DatabaseService.getAllAsync('SELECT * FROM Partos');
+      const result = await DatabaseService.getAllAsync('SELECT * FROM Partos');
+      return result || [];
     } catch (error) {
       console.error('PartoService: Error getting partos:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -449,10 +491,11 @@ export class PartoService {
 export class TratamientoService {
   static async getTratamientos() {
     try {
-      return await DatabaseService.getAllAsync('SELECT * FROM Tratamientos');
+      const result = await DatabaseService.getAllAsync('SELECT * FROM Tratamientos');
+      return result || [];
     } catch (error) {
       console.error('TratamientoService: Error getting tratamientos:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -484,10 +527,11 @@ export class TratamientoService {
 export class SecadoService {
   static async getSecados() {
     try {
-      return await DatabaseService.getAllAsync('SELECT * FROM Secados');
+      const result = await DatabaseService.getAllAsync('SELECT * FROM Secados');
+      return result || [];
     } catch (error) {
       console.error('SecadoService: Error getting secados:', error);
-      throw error;
+      return [];
     }
   }
 
@@ -516,10 +560,11 @@ export class SecadoService {
 export class OrdenaService {
   static async getOrdenas() {
     try {
-      return await DatabaseService.getAllAsync('SELECT * FROM Ordenas');
+      const result = await DatabaseService.getAllAsync('SELECT * FROM Ordenas');
+      return result || [];
     } catch (error) {
       console.error('OrdenaService: Error getting ordenas:', error);
-      throw error;
+      return [];
     }
   }
 

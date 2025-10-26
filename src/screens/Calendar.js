@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, SafeAreaView, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, SafeAreaView, RefreshControl, ActivityIndicator, Alert, Platform } from 'react-native';
 import ActionSheet from 'react-native-actions-sheet';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import { ServicioService, DiagnosticoService, TratamientoService, PartoService, SecadoService } from '../services/DataService';
 import { COLORS, EVENT_COLORS } from '../constants/colors';
 import { CalendarService } from '../services/CalendarService';
 import { useIsFocused, useFocusEffect, useRoute } from '@react-navigation/native';
+import SupabaseService from '../services/SupabaseService';
 
 const eventTypes = [
   { id: 'all', name: 'Todos', icon: 'list' },
@@ -32,7 +34,9 @@ export default function CalendarScreen({ navigation, route }) {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const actionSheetRef = useRef(null);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
-  
+  const [isOffline, setIsOffline] = useState(false);
+  const syncInProgressRef = useRef(false);
+
   // Para detectar cuando la pantalla está enfocada
   const isFocused = useIsFocused();
 
@@ -40,13 +44,35 @@ export default function CalendarScreen({ navigation, route }) {
   const loadEvents = useCallback(async () => {
     try {
       setError(null);
+
+      // On native platforms, check connectivity and sync if online
+      if (Platform.OS !== 'web') {
+        const netInfo = await NetInfo.fetch();
+        const isConnected = netInfo.isConnected && netInfo.isInternetReachable !== false;
+        setIsOffline(!isConnected);
+
+        // Only sync if online AND not already syncing
+        if (isConnected && !syncInProgressRef.current) {
+          syncInProgressRef.current = true;
+          try {
+            console.log('Calendar: Starting sync...');
+            await SupabaseService.downloadAll();
+            console.log('Calendar: Sync complete');
+          } catch (syncError) {
+            console.error('Calendar: Sync error:', syncError);
+          } finally {
+            syncInProgressRef.current = false;
+          }
+        }
+      }
+
       const allEvents = await CalendarService.getAllEvents();
-      setEvents({}); // Clear events to force React to treat as a full replacement
       setEvents(allEvents);
-      console.log('Updated events after reload:', allEvents);
+      console.log('Calendar: Events loaded:', Object.keys(allEvents).length, 'dates');
     } catch (err) {
-      console.error('Error cargando eventos:', err);
+      console.error('Calendar: Error loading events:', err);
       setError('No se pudieron cargar los eventos. Intente nuevamente.');
+      setEvents({}); // Set empty events on error to prevent crash
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -406,6 +432,14 @@ export default function CalendarScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Offline Indicator */}
+      {isOffline && Platform.OS !== 'web' && (
+        <View style={styles.offlineIndicator}>
+          <Ionicons name="cloud-offline" size={16} color="white" />
+          <Text style={styles.offlineText}>Modo sin conexión</Text>
+        </View>
+      )}
+
       {/* Toast Notification */}
       {showToast && (
         <View style={styles.toastContainer}>
@@ -532,6 +566,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  offlineIndicator: {
+    backgroundColor: '#f59e0b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
   header: {
     padding: 16,

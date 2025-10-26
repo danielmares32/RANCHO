@@ -58,16 +58,25 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const testStorageConnection = async () => {
-    Alert.alert('Probando Storage', 'Verificando conexión...');
-
     try {
+      // Check if online first
+      if (!isConnected) {
+        Alert.alert(
+          'Sin Conexión',
+          'No hay conexión a internet. El storage de Supabase requiere conexión.\n\nEn modo offline, las fotos se guardan localmente y se sincronizarán cuando haya conexión.'
+        );
+        return;
+      }
+
+      Alert.alert('Probando Storage', 'Verificando conexión...');
+
       // Test 1: Check bucket
       const bucketExists = await StorageService.checkBucketExists();
 
       if (!bucketExists) {
         Alert.alert(
           'Error de Storage',
-          'El bucket "animal-photos" no existe o no es accesible.\n\nVerifica que:\n1. El bucket existe en Supabase\n2. Las políticas RLS están configuradas'
+          'El bucket "animal-photos" no existe o no es accesible.\n\nVerifica que:\n1. El bucket existe en Supabase\n2. Las políticas RLS están configuradas correctamente\n3. El bucket está marcado como público'
         );
         return;
       }
@@ -78,7 +87,7 @@ export default function ProfileScreen({ navigation }) {
       if (uploadSuccess) {
         Alert.alert(
           'Storage OK ✅',
-          'El bucket está configurado correctamente y las subidas funcionan!'
+          'El bucket está configurado correctamente y las subidas funcionan!\n\n✓ Bucket existe\n✓ Políticas configuradas\n✓ Upload funcional'
         );
       } else {
         Alert.alert(
@@ -87,10 +96,21 @@ export default function ProfileScreen({ navigation }) {
         );
       }
     } catch (error) {
-      Alert.alert(
-        'Error',
-        `Error al probar storage: ${error.message}`
-      );
+      const isNetworkError = error.message?.includes('Failed to fetch') ||
+                             error.message?.includes('Network') ||
+                             error.message?.includes('CONNECTION');
+
+      if (isNetworkError) {
+        Alert.alert(
+          'Error de Conexión',
+          'No se pudo conectar con Supabase Storage.\n\nVerifica tu conexión a internet.'
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          `Error al probar storage: ${error.message}`
+        );
+      }
     }
   };
 

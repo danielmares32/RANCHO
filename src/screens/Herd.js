@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import { COLORS } from '../constants/colors';
 import { AnimalService } from '../services/DataService';
+import SupabaseService from '../services/SupabaseService';
 
 // Mock data
 const categories = [
@@ -18,11 +20,40 @@ export default function HerdScreen({ navigation, route }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [cattleData, setCattleData] = useState([]);
+  const [isOffline, setIsOffline] = useState(false);
   const searchInputRef = useRef(null);
+  const syncInProgressRef = useRef(false);
 
   // Cargar animales desde la base de datos
   const loadAnimals = async () => {
     try {
+      // On native platforms (Android/iOS), download from Supabase first if online
+      if (Platform.OS !== 'web') {
+        // Check internet connectivity
+        const netInfo = await NetInfo.fetch();
+        const isConnected = netInfo.isConnected && netInfo.isInternetReachable !== false;
+
+        setIsOffline(!isConnected);
+
+        // Only sync if online AND not already syncing
+        if (isConnected && !syncInProgressRef.current) {
+          syncInProgressRef.current = true;
+          try {
+            console.log('Herd: Downloading data from Supabase...');
+            await SupabaseService.downloadAll();
+            console.log('Herd: Download complete');
+          } catch (syncError) {
+            console.error('Herd: Sync error, loading local data:', syncError);
+            // Continue to load local data even if sync fails
+          } finally {
+            syncInProgressRef.current = false;
+          }
+        } else if (!isConnected) {
+          console.log('Herd: Offline mode - loading local data only');
+        }
+      }
+
+      // Always load local data (either freshly synced or cached)
       const animales = await AnimalService.getAnimales();
       setCattleData(animales);
     } catch (error) {
@@ -46,10 +77,10 @@ export default function HerdScreen({ navigation, route }) {
     return unsubscribe;
   }, [route?.params?.focusSearch, navigation]);
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate data refresh
-    setTimeout(() => setRefreshing(false), 1000);
+    await loadAnimals();
+    setRefreshing(false);
   };
 
   const filteredCattle = cattleData.filter(animal => {
@@ -145,6 +176,14 @@ export default function HerdScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Offline Indicator */}
+      {isOffline && Platform.OS !== 'web' && (
+        <View style={styles.offlineIndicator}>
+          <Ionicons name="cloud-offline" size={16} color="white" />
+          <Text style={styles.offlineText}>Modo sin conexión - Mostrando datos guardados</Text>
+        </View>
+      )}
+
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
@@ -206,6 +245,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  offlineIndicator: {
+    backgroundColor: '#f59e0b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
   searchContainer: {
     flexDirection: 'row',

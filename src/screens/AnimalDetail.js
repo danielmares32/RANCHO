@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Image, ScrollView, Modal, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Image, ScrollView, Modal, Dimensions, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import { COLORS } from '../constants/colors';
 import { AnimalService } from '../services/DataService';
+import SupabaseService from '../services/SupabaseService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -12,15 +14,42 @@ const AnimalDetail = ({ route, navigation }) => {
   const [photos, setPhotos] = useState([]);
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
+  const syncInProgressRef = React.useRef(false);
 
   useEffect(() => {
     const loadAnimal = async () => {
       try {
+        // On native platforms, check connectivity and sync if online
+        if (Platform.OS !== 'web') {
+          const netInfo = await NetInfo.fetch();
+          const isConnected = netInfo.isConnected && netInfo.isInternetReachable !== false;
+          setIsOffline(!isConnected);
+
+          // Only sync if online AND not already syncing
+          if (isConnected && !syncInProgressRef.current) {
+            syncInProgressRef.current = true;
+            try {
+              await SupabaseService.downloadAll();
+            } catch (syncError) {
+              console.error('AnimalDetail: Sync error:', syncError);
+            } finally {
+              syncInProgressRef.current = false;
+            }
+          }
+        }
+
         const data = await AnimalService.getAnimalById(animalId);
+
+        if (!data) {
+          console.error('AnimalDetail: No animal found with id:', animalId);
+          return;
+        }
+
         setAnimal(data);
 
         // Parse photos - support both old format (string) and new format (JSON array)
-        if (data.photo) {
+        if (data && data.photo) {
           try {
             const parsed = JSON.parse(data.photo);
             if (Array.isArray(parsed)) {
@@ -75,6 +104,14 @@ const AnimalDetail = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Offline Indicator */}
+      {isOffline && Platform.OS !== 'web' && (
+        <View style={styles.offlineIndicator}>
+          <Ionicons name="cloud-offline" size={16} color="white" />
+          <Text style={styles.offlineText}>Modo sin conexión</Text>
+        </View>
+      )}
+
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
@@ -215,6 +252,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
     padding: 16,
+  },
+  offlineIndicator: {
+    backgroundColor: '#f59e0b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 8,
+    marginBottom: 8,
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
   scrollContainer: {
     flex: 1,
