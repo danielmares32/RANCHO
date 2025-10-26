@@ -171,7 +171,11 @@ const AddAnimal = ({ navigation, route }) => {
       setUploading(true);
       let photoUri = null;
 
-      if (image) {
+      // Check if image is a new upload or existing URL
+      const isExistingPhoto = image && (image.startsWith('http') || image.startsWith('{'));
+      const isNewPhoto = image && !isExistingPhoto;
+
+      if (isNewPhoto) {
         if (Platform.OS === 'web') {
           // Web: Try to upload to Supabase, fallback to local storage if offline
           try {
@@ -235,6 +239,10 @@ const AddAnimal = ({ navigation, route }) => {
             return;
           }
         }
+      } else if (isExistingPhoto) {
+        // Keep existing photo URL
+        photoUri = image;
+        console.log('Keeping existing photo:', photoUri);
       }
 
       await saveAnimal(photoUri);

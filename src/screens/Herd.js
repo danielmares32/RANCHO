@@ -25,10 +25,10 @@ export default function HerdScreen({ navigation, route }) {
   const syncInProgressRef = useRef(false);
 
   // Cargar animales desde la base de datos
-  const loadAnimals = async () => {
+  const loadAnimals = async (skipSync = false) => {
     try {
       // On native platforms (Android/iOS), download from Supabase first if online
-      if (Platform.OS !== 'web') {
+      if (Platform.OS !== 'web' && !skipSync) {
         // Check internet connectivity
         const netInfo = await NetInfo.fetch();
         const isConnected = netInfo.isConnected && netInfo.isInternetReachable !== false;
@@ -124,7 +124,7 @@ export default function HerdScreen({ navigation, route }) {
         const result = await AnimalService.deleteAnimal(animal.id_animal);
         console.log('Delete result:', result);
         console.log('Animal deleted successfully, reloading list...');
-        await loadAnimals();
+        await loadAnimals(true); // Skip sync, just reload local data
         console.log('List reloaded');
 
         if (Platform.OS === 'web') {

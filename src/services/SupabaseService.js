@@ -72,14 +72,35 @@ class SupabaseService {
             local_id: animal.id_animal.toString(),
           };
 
-          // Insert or update in Supabase
-          const { data, error } = await supabase
-            .from('animales')
-            .upsert(supabaseData, {
-              onConflict: 'id_interno',
-              ignoreDuplicates: false
-            })
-            .select();
+          let data, error;
+          if (animal.supabase_id) {
+            // Update existing animal in Supabase using supabase_id
+            console.log(`SupabaseService: Updating existing animal ${animal.id_interno} (Supabase ID: ${animal.supabase_id})`);
+            const result = await supabase
+              .from('animales')
+              .update(supabaseData)
+              .eq('id_animal', animal.supabase_id)
+              .select();
+            data = result.data;
+            error = result.error;
+          } else {
+            // Insert new animal in Supabase
+            console.log(`SupabaseService: Inserting new animal ${animal.id_interno}`);
+            const result = await supabase
+              .from('animales')
+              .insert(supabaseData)
+              .select();
+            data = result.data;
+            error = result.error;
+
+            // Update local database with the new supabase_id
+            if (data && data.length > 0) {
+              await DatabaseService.runAsync(
+                'UPDATE Animales SET supabase_id = ? WHERE id_animal = ?',
+                [data[0].id_animal, animal.id_animal]
+              );
+            }
+          }
 
           if (error) throw error;
 
@@ -421,7 +442,8 @@ class SupabaseService {
                 estatus = ?,
                 photo = ?,
                 location = ?,
-                sync_status = ?
+                sync_status = ?,
+                supabase_id = ?
               WHERE id_interno = ?`,
               [
                 animal.nombre,
@@ -434,6 +456,7 @@ class SupabaseService {
                 animal.photo,
                 animal.location,
                 'synced',
+                animal.id_animal,
                 animal.id_interno
               ]
             );
@@ -443,8 +466,8 @@ class SupabaseService {
             await DatabaseService.runAsync(
               `INSERT INTO Animales (
                 nombre, id_siniiga, id_interno, raza, fecha_nacimiento,
-                sexo, estado_fisiologico, estatus, photo, location, sync_status
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                sexo, estado_fisiologico, estatus, photo, location, sync_status, supabase_id
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 animal.nombre,
                 animal.id_siniiga,
@@ -456,7 +479,8 @@ class SupabaseService {
                 animal.estatus,
                 animal.photo,
                 animal.location,
-                'synced'
+                'synced',
+                animal.id_animal
               ]
             );
             console.log(`SupabaseService: Downloaded animal ${animal.id_interno}`);
@@ -703,6 +727,30 @@ class SupabaseService {
       };
     } catch (error) {
       console.error('SupabaseService: Error in downloadAll:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete an animal from Supabase
+   */
+  static async deleteAnimal(id_animal) {
+    try {
+      console.log(`SupabaseService: Deleting animal ${id_animal} from Supabase...`);
+      const { error } = await supabase
+        .from('animales')
+        .delete()
+        .eq('id_animal', id_animal);
+
+      if (error) {
+        console.error(`SupabaseService: Error deleting animal ${id_animal}:`, error);
+        throw error;
+      }
+
+      console.log(`SupabaseService: Animal ${id_animal} deleted successfully`);
+      return true;
+    } catch (error) {
+      console.error(`SupabaseService: Error deleting animal ${id_animal}:`, error);
       throw error;
     }
   }

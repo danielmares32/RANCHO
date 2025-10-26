@@ -69,6 +69,19 @@ class DatabaseService {
 
     console.log('DatabaseService: Starting database schema initialization...');
 
+    // Migration: Add supabase_id column if it doesn't exist
+    try {
+      await db.execAsync(`
+        ALTER TABLE Animales ADD COLUMN supabase_id INTEGER;
+      `);
+      console.log('DatabaseService: Added supabase_id column to Animales table');
+    } catch (error) {
+      // Column might already exist, ignore error
+      if (!error.message.includes('duplicate column')) {
+        console.log('DatabaseService: supabase_id column migration skipped (may already exist)');
+      }
+    }
+
     const schemaStatements = [
       `CREATE TABLE IF NOT EXISTS Animales (
         id_animal INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +96,8 @@ class DatabaseService {
         photo TEXT,
         location TEXT,
         sync_status TEXT DEFAULT 'pending' NOT NULL,
-        local_id TEXT
+        local_id TEXT,
+        supabase_id INTEGER
       );`,
       `CREATE TABLE IF NOT EXISTS Servicios (
         id_servicio INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -381,9 +395,28 @@ export class AnimalService {
   }
 
   static async deleteAnimal(id_animal) {
+    const NetInfo = require('@react-native-community/netinfo').default;
+    const SupabaseService = require('./SupabaseService').default;
+
     try {
+        // Check if online to also delete from Supabase
+        const netInfo = await NetInfo.fetch();
+        const isOnline = netInfo.isConnected && netInfo.isInternetReachable !== false;
+
+        if (isOnline) {
+          try {
+            console.log(`AnimalService: Deleting animal ${id_animal} from Supabase...`);
+            await SupabaseService.deleteAnimal(id_animal);
+            console.log(`AnimalService: Animal ${id_animal} deleted from Supabase`);
+          } catch (supabaseError) {
+            console.error(`AnimalService: Error deleting from Supabase (continuing with local delete):`, supabaseError);
+            // Continue with local delete even if Supabase fails
+          }
+        }
+
+        // Delete from local database
         const result = await DatabaseService.runAsync('DELETE FROM Animales WHERE id_animal = ?', [id_animal]);
-        console.log(`AnimalService: Animal ${id_animal} deleted. Rows affected: ${result.changes}`);
+        console.log(`AnimalService: Animal ${id_animal} deleted from local DB. Rows affected: ${result.changes}`);
         return result.changes; // Number of rows affected
     } catch (error) {
         console.error(`AnimalService: Error deleting animal ${id_animal}:`, error);
